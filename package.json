@@ -1,0 +1,46 @@
+{
+  "name": "git-atomic",
+  "version": "0.1.0",
+  "description": "Turn a messy branch into clean, logically-ordered, buildable atomic commits. Your original branch is never touched.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "git-atomic": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "npm run build && node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "git",
+    "atomic",
+    "commits",
+    "history",
+    "tree-sitter",
+    "refactor"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@vscode/tree-sitter-wasm": "^0.3.1",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1",
+    "web-tree-sitter": "^0.27.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3",
+    "vitest": "^5.0.4"
+  }
+}
