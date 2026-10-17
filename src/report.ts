@@ -39,6 +39,14 @@ export function renderPlan(plan: Plan, options: RenderOptions = {}): string {
 
   if (plan.commits.length === 0) {
     lines.push(c.yellow('No changes to split.'));
+    if (plan.buildability?.ran) {
+      lines.push('');
+      renderBuildability(lines, c, plan);
+    }
+    if (plan.notes.length > 0) {
+      lines.push('');
+      for (const note of plan.notes) lines.push(c.dim(`note: ${note}`));
+    }
     return lines.join('\n');
   }
 
@@ -55,12 +63,43 @@ export function renderPlan(plan: Plan, options: RenderOptions = {}): string {
     }
   }
 
+  if (plan.buildability?.ran) {
+    lines.push('');
+    renderBuildability(lines, c, plan);
+  }
+
   if (plan.notes.length > 0) {
     lines.push('');
     for (const note of plan.notes) lines.push(c.dim(`note: ${note}`));
   }
 
   return lines.join('\n');
+}
+
+function renderBuildability(
+  lines: string[],
+  c: ReturnType<typeof createColors>,
+  plan: Plan,
+): void {
+  const b = plan.buildability;
+  if (!b?.ran) return;
+  const cmd = b.commands.join(' && ');
+  lines.push(
+    `${c.bold('check')}  ${b.passed}/${b.total} commit(s) pass ${c.dim(cmd || '(command)')}`,
+  );
+  for (const fold of b.folds) {
+    lines.push(
+      `  ${c.yellow('fold')} merged commit ${fold.fromIndex} into ${fold.intoIndex}`,
+    );
+  }
+  if (b.unbuildable.length > 0) {
+    lines.push(`  ${c.red('unbuildable')} ${b.unbuildable.join(', ')}`);
+  }
+  if (b.initialTotal !== b.total) {
+    lines.push(
+      `  ${c.dim('reduced')} ${b.initialTotal} → ${b.total} commit(s)`,
+    );
+  }
 }
 
 export function renderApplied(
@@ -76,6 +115,10 @@ export function renderApplied(
   );
   for (const commit of applied.commits) {
     lines.push(`  ${c.dim(shortSha(commit.sha))} ${commit.subject}`);
+  }
+  if (plan.buildability?.ran) {
+    lines.push('');
+    renderBuildability(lines, c, plan);
   }
   lines.push(`${c.dim('original branch left untouched')}`);
   return lines.join('\n');

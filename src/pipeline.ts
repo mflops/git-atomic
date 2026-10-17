@@ -12,10 +12,13 @@ import { buildUnits, collectFileChanges } from './units/extract.js';
 import { basename } from './util/paths.js';
 import type {
   ApplyResult,
+  CheckReport,
   CommitCluster,
   Plan,
   PlannedCommit,
 } from './model/types.js';
+import { buildCommitSteps, type CommitStep } from './apply/apply.js';
+import { verifyBuildability } from './verify/buildability.js';
 
 export interface PipelineOptions {
   cwd: string;
@@ -30,6 +33,17 @@ export interface PipelineOptions {
   mapper?: SymbolMapper | null;
   /** Commit-message source. Defaults to the deterministic offline generator. */
   messageGenerator?: MessageGenerator;
+  /**
+   * Build/test command(s) run after each generated commit. When set, the plan
+   * is verified (and repaired) before it is applied. All must exit 0.
+   */
+  check?: string[];
+  /** Per-command timeout in milliseconds. Defaults to 300000. */
+  checkTimeout?: number;
+  /** Ignored dependency directories to link into the scratch checkout. */
+  checkLinks?: string[];
+  /** Progress callback fired after each buildability check. */
+  onCheck?: (report: CheckReport) => void;
 }
 
 const DEFAULT_BRANCH = 'git-atomic/split';
@@ -143,21 +157,43 @@ export interface RunOptions extends PipelineOptions {
 export interface RunResult {
   plan: Plan;
   applied: ApplyResult | null;
+  /** Pre-built commit steps, ready to apply. Present only if verification ran. */
+  steps?: CommitStep[];
 }
 
-/** Build the plan, and optionally apply it to a brand-new branch. */
+/** Build the plan, verify its buildability if requested, and optionally apply it. */
 export async function runPipeline(options: RunOptions): Promise<RunResult> {
-  const plan = await buildPlan(options);
-  if (!options.apply || plan.commits.length === 0) return { plan, applied: null };
+  const repo = await GitRepo.open(options.cwd);
+  let plan = await buildPlan(options);
+  let steps: CommitStep[] | undefined;
 
-  const applied = await applyPlan(await GitRepo.open(options.cwd), plan, {
+  const check = options.check ?? [];
+  if (check.length > 0 && plan.commits.length > 0) {
+    const generator = options.messageGenerator ?? defaultMessageGenerator;
+    const verified = await verifyBuildability(repo, plan, generator, {
+      commands: check,
+      timeoutMs: options.checkTimeout,
+      links: options.checkLinks,
+      onCheck: options.onCheck,
+    });
+    plan = verified.plan;
+    steps = verified.steps;
+    plan.buildability = verified.report;
+  }
+
+  if (!options.apply || plan.commits.length === 0) {
+    return { plan, applied: null, steps };
+  }
+
+  const applied = await applyPlan(repo, plan, {
     branch: plan.branch,
     force: options.force ?? false,
     // Ignore patterns make the working-tree tree comparison meaningless.
     verifyTree: (options.ignore ?? []).length === 0,
+    ...(steps ? { steps } : {}),
     ...(options.onCommit ? { onCommit: options.onCommit } : {}),
   });
-  return { plan, applied };
+  return { plan, applied, steps };
 }
 
 export function repoName(plan: Plan): string {

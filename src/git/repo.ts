@@ -265,6 +265,11 @@ export class GitRepo {
     await this.run(['update-ref', `refs/heads/${branch}`, sha]);
   }
 
+  /** Run a git command in an arbitrary working directory (e.g. a worktree). */
+  runGitAt(cwd: string, args: readonly string[], opts: GitRunOpts = {}): Promise<GitRunResult> {
+    return runGit(args, { cwd, ...opts });
+  }
+
   private async identity(): Promise<Record<string, string> | null> {
     if (this.identityEnv) return this.identityEnv;
     const email = (await this.text(['config', '--get', 'user.email'], { allowNonZero: true })).trim();

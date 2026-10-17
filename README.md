@@ -58,6 +58,9 @@ Options:
 | `--max-commits <n>` | Upper bound on the number of commits. |
 | `--ignore <glob>` | Exclude paths (repeatable). |
 | `--no-symbols` | Disable symbol mapping (proximity clustering only). |
+| `--check <cmd>` | Build/test command to run after each commit (repeatable). |
+| `--skip-check` | Do not run checks even if configured. |
+| `--check-timeout <ms>` | Timeout per check command (default 300000). |
 | `--json` | Machine-readable plan. |
 
 ### Config file
@@ -69,7 +72,10 @@ Options:
   "base": "main",
   "branch": "atomic/split",
   "ignore": ["dist/**", "coverage/**"],
-  "maxCommits": 12
+  "maxCommits": 12,
+  "check": "npm test",
+  "checkTimeout": 300000,
+  "checkLinks": ["node_modules"]
 }
 ```
 
@@ -94,15 +100,17 @@ working tree ─┬─> unified diff (-U0) ─> change blocks ─> change units 
   config) whole, while implementation files can still split per symbol.
 - **Fidelity** is checked twice: a per-file byte comparison, and a whole-tree
   comparison against the working directory.
+- **Buildability-aware.** Optionally run `--check` after each commit and fold
+  failing commits together until the history builds and passes.
 
 ## Status / roadmap
 
 Implemented: the core pipeline (diff → change units → dependency graph →
-clustering → ordering → apply with fidelity proof → deterministic messages).
+clustering → ordering → apply with fidelity proof → deterministic messages) plus
+buildability verification with a fold-back repair loop.
 
-Planned (see the build plan): buildability verification with a fold-back repair
-loop, an interactive review TUI, optional LLM commit messages (the
-`MessageGenerator` seam already exists), and additional grammars.
+Planned (see the build plan): an interactive review TUI, optional LLM commit
+messages (the `MessageGenerator` seam already exists), and additional grammars.
 
 ## Development
 

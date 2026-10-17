@@ -165,6 +165,44 @@ export interface PlanStats {
   removedLines: number;
 }
 
+/** Outcome of running the configured check against one generated commit. */
+export interface CheckReport {
+  /** 1-based position of the commit when it was checked. */
+  index: number;
+  subject: string;
+  ok: boolean;
+  durationMs: number;
+  /** The command that failed, when the commit did not build. */
+  command?: string;
+  /** Captured output (truncated) of the failing command. */
+  output?: string;
+}
+
+/** One repair: a failing commit merged into a neighbouring commit. */
+export interface FoldReport {
+  /** 1-based index of the commit that failed the check. */
+  fromIndex: number;
+  /** 1-based index of the commit it was merged into. */
+  intoIndex: number;
+  reason: string;
+}
+
+/** Summary of the buildability verification pass. */
+export interface BuildabilityReport {
+  ran: boolean;
+  commands: string[];
+  /** Number of final commits that passed the check. */
+  passed: number;
+  /** Number of final commits. */
+  total: number;
+  /** Number of commits before any fold-back repair. */
+  initialTotal: number;
+  folds: FoldReport[];
+  checks: CheckReport[];
+  /** 1-based indices of commits that could not be made to build. */
+  unbuildable: number[];
+}
+
 export interface Plan {
   repo: string;
   /** Resolved commit hash of the base revision. */
@@ -180,6 +218,8 @@ export interface Plan {
   stats: PlanStats;
   /** Non-fatal notes surfaced to the user (fallbacks, merges, ...). */
   notes: string[];
+  /** Present when the configured check was run against the generated commits. */
+  buildability?: BuildabilityReport;
 }
 
 export interface ApplyResult {

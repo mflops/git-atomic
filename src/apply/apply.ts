@@ -3,13 +3,33 @@ import path from 'node:path';
 import { FidelityError, UsageError } from '../errors.js';
 import { applyBlocks, joinContent, splitContent } from '../diff/parse.js';
 import type { GitRepo } from '../git/repo.js';
-import type { ApplyResult, ChangeBlock, FileChange, Plan } from '../model/types.js';
+import type {
+  ApplyResult,
+  ChangeBlock,
+  FileChange,
+  Plan,
+  PlannedCommit,
+} from '../model/types.js';
+
+/** A commit constructed from the plan but not yet attached to any ref. */
+export interface CommitStep {
+  /** 1-based position in the new history. */
+  index: number;
+  /** Tree hash produced by this commit. */
+  tree: string;
+  /** Commit object hash. */
+  sha: string;
+  subject: string;
+  files: string[];
+}
 
 export interface ApplyOptions {
   branch: string;
   force: boolean;
   /** Compare the final tree against a tree built from the working tree. */
   verifyTree: boolean;
+  /** Pre-built steps (e.g. from buildability verification) to reuse. */
+  steps?: CommitStep[];
   onCommit?: (info: { index: number; sha: string; subject: string; files: string[] }) => void;
 }
 
@@ -55,22 +75,27 @@ export function verifyReconstruction(plan: Plan): string[] {
   return mismatches;
 }
 
-async function runCommits(
+/**
+ * Build the full commit chain for a plan into the given (private) index.
+ *
+ * Commits are *cumulative*: the tree at commit `i` is the base tree plus every
+ * unit from commits `1..i`. Objects are written but no ref is touched, which
+ * makes this safe to call from the dry-run/buildability path.
+ */
+export async function buildCommitSteps(
   repo: GitRepo,
   plan: Plan,
-  options: ApplyOptions,
   env: Record<string, string>,
-): Promise<{ commits: ApplyResult['commits']; head: string; tree: string }> {
+  commits: readonly PlannedCommit[] = plan.commits,
+): Promise<CommitStep[]> {
   const byPath = new Map(plan.files.map((f) => [f.path, f]));
   const applied = new Map<string, ChangeBlock[]>();
-  const commits: ApplyResult['commits'] = [];
+  const steps: CommitStep[] = [];
 
   let parent = plan.base;
-  let tree = '';
-
   await repo.readTree(plan.baseTree, env);
 
-  for (const [offset, commit] of plan.commits.entries()) {
+  for (const [offset, commit] of commits.entries()) {
     const files = [...new Set(commit.cluster.units.map((u) => u.file))].sort();
     for (const file of files) {
       const change = byPath.get(file);
@@ -99,20 +124,14 @@ async function runCommits(
       await repo.updateIndexCacheInfo(modeFor(change), sha, file, env);
     }
 
-    tree = await repo.writeTree(env);
+    const tree = await repo.writeTree(env);
     const message = `${commit.message.subject}\n\n${commit.message.body}\n`;
     const sha = await repo.commitTree(tree, parent ? [parent] : [], message);
-    commits.push({ sha, subject: commit.message.subject, files });
-    options.onCommit?.({
-      index: offset + 1,
-      sha,
-      subject: commit.message.subject,
-      files,
-    });
+    steps.push({ index: offset + 1, tree, sha, subject: commit.message.subject, files });
     parent = sha;
   }
 
-  return { commits, head: parent, tree };
+  return steps;
 }
 
 /**
@@ -152,7 +171,10 @@ export async function applyPlan(
       ? await repo.computeWorkingTreeSha(verifyEnv)
       : null;
 
-    const { commits, head, tree } = await runCommits(repo, plan, options, env);
+    const steps = options.steps ?? (await buildCommitSteps(repo, plan, env));
+    const last = steps[steps.length - 1];
+    const head = last?.sha ?? plan.base;
+    const tree = last?.tree ?? plan.baseTree;
 
     if (workingTreeSha !== null && workingTreeSha !== tree) {
       throw new FidelityError([
@@ -161,6 +183,20 @@ export async function applyPlan(
     }
 
     await repo.setBranch(options.branch, head);
+
+    const commits = steps.map((step) => ({
+      sha: step.sha,
+      subject: step.subject,
+      files: step.files,
+    }));
+    for (const step of steps) {
+      options.onCommit?.({
+        index: step.index,
+        sha: step.sha,
+        subject: step.subject,
+        files: step.files,
+      });
+    }
 
     const manifestPath = path.join(gitDir, 'git-atomic', 'last-run.json');
     await fs.mkdir(path.dirname(manifestPath), { recursive: true });
@@ -176,6 +212,7 @@ export async function applyPlan(
           head,
           tree,
           commits,
+          buildability: plan.buildability ?? null,
         },
         null,
         2,

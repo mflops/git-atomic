@@ -22,6 +22,9 @@ interface CliOptions {
   symbols: boolean;
   config?: string;
   color?: boolean;
+  check: string[];
+  skipCheck?: boolean;
+  checkTimeout?: number;
 }
 
 function useColor(option: boolean | undefined): boolean {
@@ -60,6 +63,17 @@ async function main(): Promise<number> {
     .option('--no-symbols', 'disable symbol mapping (proximity clustering only)')
     .option('--config <path>', 'path to git-atomic.config.json')
     .option('--no-color', 'disable coloured output')
+    .option('--check <cmd>', 'build/test command to run after each commit (repeatable)', (value: string, previous: string[]) => [...previous, value], [] as string[])
+    .option('--skip-check', 'do not run checks even if configured')
+    .option(
+      '--check-timeout <ms>',
+      'timeout for each check command in milliseconds',
+      (value: string) => {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) throw new UsageError('--check-timeout must be a positive integer');
+        return parsed;
+      },
+    )
     .action(async (options: CliOptions) => {
       exitCode = await run(options);
     });
@@ -79,6 +93,12 @@ async function run(options: CliOptions): Promise<number> {
   const maxCommits = options.maxCommits ?? config.maxCommits;
   const apply = options.dryRun ? false : (options.apply ?? config.apply ?? false);
 
+  const cliCheck = options.check ?? [];
+  const configCheck = config.check === undefined ? [] : Array.isArray(config.check) ? config.check : [config.check];
+  const check = options.skipCheck ? [] : (cliCheck.length > 0 ? cliCheck : configCheck);
+  const checkTimeout = options.checkTimeout ?? config.checkTimeout;
+  const checkLinks = config.checkLinks;
+
   const common = {
     cwd,
     ...(base ? { base } : {}),
@@ -86,6 +106,9 @@ async function run(options: CliOptions): Promise<number> {
     ...(ignore.length > 0 ? { ignore } : {}),
     ...(maxCommits ? { maxCommits } : {}),
     ...(options.symbols ? {} : { mapper: null }),
+    ...(check.length > 0 ? { check } : {}),
+    ...(checkTimeout ? { checkTimeout } : {}),
+    ...(checkLinks && checkLinks.length > 0 ? { checkLinks } : {}),
   };
 
   if (apply) {
@@ -109,7 +132,7 @@ async function run(options: CliOptions): Promise<number> {
     return 0;
   }
 
-  const plan = await buildPlan(common);
+  const { plan } = await runPipeline({ ...common, apply: false });
   if (options.json) {
     process.stdout.write(`${JSON.stringify(summarize(plan), null, 2)}\n`);
   } else {
@@ -140,6 +163,7 @@ function summarize(plan: Awaited<ReturnType<typeof buildPlan>>) {
     })),
     edges: plan.graph.edges,
     notes: plan.notes,
+    buildability: plan.buildability ?? null,
   };
 }
 

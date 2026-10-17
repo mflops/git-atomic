@@ -17,10 +17,17 @@ export const ConfigSchema = z.strictObject({
   /** Upper bound on the number of generated commits. */
   maxCommits: z.number().int().positive().optional(),
   /**
-   * Build/test command to run after each commit. Reserved for a later
-   * milestone; accepted now so config files are forward compatible.
+   * Build/test command(s) to run after each generated commit. Every command
+   * must exit 0 for a commit to be considered buildable. Commits that fail are
+   * folded into the next commit and retried.
    */
-  check: z.string().optional(),
+  check: z
+    .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
+    .optional(),
+  /** Per-command timeout in milliseconds. Defaults to 300000 (5 minutes). */
+  checkTimeout: z.number().int().positive().optional(),
+  /** Ignored dependency directories to link into the scratch checkout. */
+  checkLinks: z.array(z.string().min(1)).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
