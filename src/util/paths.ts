@@ -2,9 +2,47 @@ import path from 'node:path';
 import type { UnitKind } from '../model/types.js';
 
 /** Extensions we attempt to parse with tree-sitter. */
-export const SCRIPT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const;
+export const SCRIPT_EXTS = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.py',
+  '.pyi',
+  '.go',
+  '.rs',
+  '.java',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.cxx',
+  '.hpp',
+  '.hh',
+  '.hxx',
+  '.rb',
+  '.php',
+  '.cs',
+] as const;
 
-const MODULE_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json'];
+const MODULE_EXTS = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.json',
+  '.py',
+  '.go',
+  '.rs',
+];
 
 const CONFIG_BASENAMES = new Set([
   'tsconfig.json',
@@ -68,7 +106,20 @@ export function stripExt(p: string): string {
   return e ? p.slice(0, -e.length) : p;
 }
 
-export type ScriptLanguage = 'typescript' | 'tsx' | 'javascript' | 'jsx';
+export type ScriptLanguage =
+  | 'typescript'
+  | 'tsx'
+  | 'javascript'
+  | 'jsx'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'cpp'
+  | 'c'
+  | 'ruby'
+  | 'php'
+  | 'csharp';
 
 /** Returns the tree-sitter language id for a path, or null when unsupported. */
 export function languageOf(p: string): ScriptLanguage | null {
@@ -85,6 +136,31 @@ export function languageOf(p: string): ScriptLanguage | null {
       return 'javascript';
     case '.jsx':
       return 'jsx';
+    case '.py':
+    case '.pyi':
+      return 'python';
+    case '.go':
+      return 'go';
+    case '.rs':
+      return 'rust';
+    case '.java':
+      return 'java';
+    case '.c':
+    case '.h':
+      return 'c';
+    case '.cc':
+    case '.cpp':
+    case '.cxx':
+    case '.hpp':
+    case '.hh':
+    case '.hxx':
+      return 'cpp';
+    case '.rb':
+      return 'ruby';
+    case '.php':
+      return 'php';
+    case '.cs':
+      return 'csharp';
     default:
       return null;
   }

@@ -11,24 +11,41 @@ const WASM_FOR_LANGUAGE: Record<string, string> = {
   tsx: 'tree-sitter-tsx.wasm',
   javascript: 'tree-sitter-javascript.wasm',
   jsx: 'tree-sitter-javascript.wasm',
+  python: 'tree-sitter-python.wasm',
+  go: 'tree-sitter-go.wasm',
+  rust: 'tree-sitter-rust.wasm',
+  java: 'tree-sitter-java.wasm',
+  cpp: 'tree-sitter-cpp.wasm',
+  c: 'tree-sitter-cpp.wasm',
+  ruby: 'tree-sitter-ruby.wasm',
+  php: 'tree-sitter-php.wasm',
+  csharp: 'tree-sitter-c-sharp.wasm',
 };
 
 const DEF_TYPES = new Map<string, SymbolKind>([
   ['function_declaration', 'function'],
   ['generator_function_declaration', 'function'],
   ['function_expression', 'function'],
+  ['function_definition', 'function'],
+  ['method_definition', 'method'],
+  ['method_declaration', 'method'],
   ['class_declaration', 'class'],
   ['abstract_class_declaration', 'class'],
   ['class', 'class'],
   ['interface_declaration', 'interface'],
   ['type_alias_declaration', 'type'],
   ['enum_declaration', 'enum'],
+  ['enum_specifier', 'enum'],
   ['internal_module', 'namespace'],
-  ['method_definition', 'method'],
+  ['namespace_declaration', 'namespace'],
+  ['module_declaration', 'namespace'],
   ['public_field_definition', 'method'],
   ['lexical_declaration', 'variable'],
   ['variable_declaration', 'variable'],
   ['import_statement', 'import'],
+  ['import_from_statement', 'import'],
+  ['use_declaration', 'import'],
+  ['impl_item', 'class'],
 ]);
 
 let languagesPromise: Promise<Map<string, Language>> | null = null;
@@ -53,8 +70,10 @@ function nodeName(node: TSNode): string | null {
       const declarator = node.namedChildren.find((c) => c?.type === 'variable_declarator');
       return declarator?.childForFieldName('name')?.text ?? null;
     }
-    case 'import_statement': {
-      const source = node.childForFieldName('source');
+    case 'import_statement':
+    case 'import_from_statement':
+    case 'use_declaration': {
+      const source = node.childForFieldName('source') ?? node.childForFieldName('argument');
       return source ? source.text.replace(/^['"`]|['"`]$/g, '') : null;
     }
     default: {
