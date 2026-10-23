@@ -25,6 +25,7 @@ interface CliOptions {
   check: string[];
   skipCheck?: boolean;
   checkTimeout?: number;
+  interactive?: boolean;
 }
 
 function useColor(option: boolean | undefined): boolean {
@@ -63,6 +64,7 @@ async function main(): Promise<number> {
     .option('--no-symbols', 'disable symbol mapping (proximity clustering only)')
     .option('--config <path>', 'path to git-atomic.config.json')
     .option('--no-color', 'disable coloured output')
+    .option('--interactive', 'open an interactive review TUI before applying')
     .option('--check <cmd>', 'build/test command to run after each commit (repeatable)', (value: string, previous: string[]) => [...previous, value], [] as string[])
     .option('--skip-check', 'do not run checks even if configured')
     .option(
@@ -128,6 +130,43 @@ async function run(options: CliOptions): Promise<number> {
       process.stdout.write(`\n${renderApplied(plan, applied, { color: useColor(options.color) })}\n`);
     } else {
       process.stdout.write('No changes to apply.\n');
+    }
+    return 0;
+  }
+
+  if (options.interactive) {
+    if (options.json) {
+      throw new UsageError('--interactive cannot be combined with --json');
+    }
+    if (!process.stdout.isTTY) {
+      throw new UsageError('--interactive requires a TTY');
+    }
+    const { plan } = await runPipeline({ ...common, apply: false });
+    if (plan.commits.length === 0) {
+      process.stdout.write('No changes to split.\n');
+      return 0;
+    }
+    const { runTui } = await import('./tui/index.js');
+    let apply = false;
+    await runTui({
+      plan: {
+        baseRef: plan.baseRef,
+        base: plan.base,
+        branch: plan.branch,
+        commits: plan.commits.map((c) => ({
+          index: c.index,
+          subject: c.message.subject,
+          files: c.files,
+        })),
+      },
+      onApply: () => {
+        apply = true;
+      },
+    });
+    if (!apply) return 0;
+    const { plan: finalPlan, applied } = await runPipeline({ ...common, apply: true, force: options.force ?? false });
+    if (applied) {
+      process.stdout.write(`\n${renderApplied(finalPlan, applied, { color: useColor(options.color) })}\n`);
     }
     return 0;
   }

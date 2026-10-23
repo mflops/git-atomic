@@ -61,6 +61,7 @@ Options:
 | `--check <cmd>` | Build/test command to run after each commit (repeatable). |
 | `--skip-check` | Do not run checks even if configured. |
 | `--check-timeout <ms>` | Timeout per check command (default 300000). |
+| `--interactive` | Review the plan in a TUI, then apply or quit. |
 | `--json` | Machine-readable plan. |
 
 ### Config file
