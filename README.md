@@ -120,6 +120,7 @@ $ npm install
 $ npm run typecheck
 $ npm test
 $ npm run build && node dist/cli.js --help
+$ npm run demo    # create a sample messy repo and print a plan
 ```
 
 Requires Node 20+.
