@@ -1,26 +1,22 @@
 import { render } from 'ink';
-import { App, type TuiPlan } from './app.js';
+import type { Plan } from '../model/types.js';
+import { App } from './app.js';
 
-export interface RunTuiOptions {
-  plan: TuiPlan;
-  onApply: () => Promise<void> | void;
-}
-
-export async function runTui(options: RunTuiOptions): Promise<void> {
+/**
+ * Open the interactive review and resolve with the edited plan, or `null` if
+ * the user quit without applying.
+ */
+export async function runTui(plan: Plan): Promise<Plan | null> {
   return new Promise((resolve) => {
-    const { unmount } = render(
-      <App
-        plan={options.plan}
-        onApply={async () => {
-          unmount();
-          await options.onApply();
-          resolve();
-        }}
-        onQuit={() => {
-          unmount();
-          resolve();
-        }}
-      />,
+    let settled = false;
+    const finish = (value: Plan | null): void => {
+      if (settled) return;
+      settled = true;
+      instance.unmount();
+      resolve(value);
+    };
+    const instance = render(
+      <App plan={plan} onApply={finish} onQuit={() => finish(null)} />,
     );
   });
 }

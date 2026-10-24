@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { loadConfig, type Config } from './config.js';
 import { GitAtomicError, UsageError } from './errors.js';
 import { GitRepo } from './git/repo.js';
-import { buildPlan, runPipeline } from './pipeline.js';
+import { buildPlan, runEditedPlan, runPipeline } from './pipeline.js';
 import { renderApplied, renderPlan } from './report.js';
 
 const require = createRequire(import.meta.url);
@@ -26,6 +28,7 @@ interface CliOptions {
   skipCheck?: boolean;
   checkTimeout?: number;
   interactive?: boolean;
+  undo?: boolean;
 }
 
 function useColor(option: boolean | undefined): boolean {
@@ -76,6 +79,7 @@ async function main(): Promise<number> {
         return parsed;
       },
     )
+    .option('--undo', 'delete the branch created by the last run (original branch untouched)')
     .action(async (options: CliOptions) => {
       exitCode = await run(options);
     });
@@ -88,6 +92,31 @@ async function run(options: CliOptions): Promise<number> {
   const cwd = process.cwd();
   const repo = await GitRepo.open(cwd);
   const config: Config = await loadConfig(repo.root, options.config);
+
+  if (options.undo) {
+    const gitDir = await repo.gitDir();
+    const manifestPath = path.join(gitDir, 'git-atomic', 'last-run.json');
+    let manifest: any;
+    try {
+      manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    } catch {
+      throw new UsageError('No git-atomic run manifest found (run `git-atomic --apply` first)');
+    }
+    const branch = manifest.branch;
+    if (!branch) throw new UsageError('Manifest missing branch name');
+    const exists = await repo.branchExists(branch);
+    if (!exists) throw new UsageError(`Branch '${branch}' no longer exists`);
+    if (manifest.head) {
+      const head = await repo.runGitAt(repo.root, ['rev-parse', branch], { allowNonZero: true });
+      const sha = head.stdout.toString('utf8').trim();
+      if (sha && sha !== manifest.head) {
+        throw new UsageError(`Branch '${branch}' has moved (not undoing). Use --force or delete it manually`);
+      }
+    }
+    await repo.deleteBranch(branch);
+    process.stdout.write(`Removed branch ${branch} (original branch left untouched). Base was ${manifest.baseRef ?? manifest.base}\n`);
+    return 0;
+  }
 
   const ignore = options.ignore.length > 0 ? options.ignore : (config.ignore ?? []);
   const base = options.base ?? config.base;
@@ -141,30 +170,30 @@ async function run(options: CliOptions): Promise<number> {
     if (!process.stdout.isTTY) {
       throw new UsageError('--interactive requires a TTY');
     }
-    const { plan } = await runPipeline({ ...common, apply: false });
+    const plan = await buildPlan(common);
     if (plan.commits.length === 0) {
       process.stdout.write('No changes to split.\n');
       return 0;
     }
     const { runTui } = await import('./tui/index.js');
-    let apply = false;
-    await runTui({
-      plan: {
-        baseRef: plan.baseRef,
-        base: plan.base,
-        branch: plan.branch,
-        commits: plan.commits.map((c) => ({
-          index: c.index,
-          subject: c.message.subject,
-          files: c.files,
-        })),
-      },
-      onApply: () => {
-        apply = true;
+    const edited = await runTui(plan);
+    if (!edited) return 0;
+    const { plan: finalPlan, applied } = await runEditedPlan(edited, {
+      cwd,
+      ...(base ? { base } : {}),
+      ...(branch ? { branch } : {}),
+      ...(ignore.length > 0 ? { ignore } : {}),
+      ...(maxCommits ? { maxCommits } : {}),
+      ...(options.symbols ? {} : { mapper: null }),
+      ...(check.length > 0 ? { check } : {}),
+      ...(checkTimeout ? { checkTimeout } : {}),
+      ...(checkLinks && checkLinks.length > 0 ? { checkLinks } : {}),
+      apply: true,
+      force: options.force ?? false,
+      onCommit: (info) => {
+        process.stdout.write(`  ${info.index}. ${info.subject}\n`);
       },
     });
-    if (!apply) return 0;
-    const { plan: finalPlan, applied } = await runPipeline({ ...common, apply: true, force: options.force ?? false });
     if (applied) {
       process.stdout.write(`\n${renderApplied(finalPlan, applied, { color: useColor(options.color) })}\n`);
     }

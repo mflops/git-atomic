@@ -270,6 +270,11 @@ export class GitRepo {
     return runGit(args, { cwd, ...opts });
   }
 
+  /** Delete a branch ref. Used by `--undo`; never touches other refs. */
+  async deleteBranch(branch: string): Promise<void> {
+    await this.run(['update-ref', '-d', `refs/heads/${branch}`]);
+  }
+
   private async identity(): Promise<Record<string, string> | null> {
     if (this.identityEnv) return this.identityEnv;
     const email = (await this.text(['config', '--get', 'user.email'], { allowNonZero: true })).trim();

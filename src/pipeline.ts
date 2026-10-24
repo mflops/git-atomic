@@ -196,6 +196,44 @@ export async function runPipeline(options: RunOptions): Promise<RunResult> {
   return { plan, applied, steps };
 }
 
+/**
+ * Verify and apply a plan that was edited interactively (reordered/merged/
+ * split/renamed). Edits only rearrange change units, so the final tree still
+ * reproduces the working tree exactly.
+ */
+export async function runEditedPlan(plan: Plan, options: RunOptions): Promise<RunResult> {
+  const repo = await GitRepo.open(options.cwd);
+  let finalPlan = plan;
+  let steps: CommitStep[] | undefined;
+
+  const check = options.check ?? [];
+  if (check.length > 0 && finalPlan.commits.length > 0) {
+    const generator = options.messageGenerator ?? defaultMessageGenerator;
+    const verified = await verifyBuildability(repo, finalPlan, generator, {
+      commands: check,
+      timeoutMs: options.checkTimeout,
+      links: options.checkLinks,
+      onCheck: options.onCheck,
+    });
+    finalPlan = verified.plan;
+    steps = verified.steps;
+    finalPlan.buildability = verified.report;
+  }
+
+  if (!options.apply || finalPlan.commits.length === 0) {
+    return { plan: finalPlan, applied: null, steps };
+  }
+
+  const applied = await applyPlan(repo, finalPlan, {
+    branch: finalPlan.branch,
+    force: options.force ?? false,
+    verifyTree: (options.ignore ?? []).length === 0,
+    ...(steps ? { steps } : {}),
+    ...(options.onCommit ? { onCommit: options.onCommit } : {}),
+  });
+  return { plan: finalPlan, applied, steps };
+}
+
 export function repoName(plan: Plan): string {
   return basename(plan.repo);
 }
